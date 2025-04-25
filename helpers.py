@@ -1,6 +1,22 @@
 from datetime import datetime
+from urllib.parse import unquote
+import os
+import logging
+import dotenv
+
+# Configure logging
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+    datefmt='%Y-%m-%d %H:%M:%S'
+)
+logger = logging.getLogger('news_scraper')
 
 def process_article_dates(dates_text):
+    """
+    Process and extract dates from article text
+    Returns a list of [published_date, updated_date] in ISO format
+    """
     if not dates_text:
         return [None, None]
 
@@ -54,5 +70,43 @@ def process_article_dates(dates_text):
 
         return result_dates[:2]
 
-    except Exception:
+    except Exception as e:
+        logger.error(f"Error processing dates: {e}")
         return [None, None]
+
+def save_html_to_file(html_content, filename="output.html"):
+    """
+    Save the given HTML content to a file for easier inspection.
+    """
+    with open(filename, "w", encoding="utf-8") as file:
+        file.write(html_content)
+    logger.info(f"HTML content saved to '{filename}'. Open it in a browser to inspect.")
+
+def create_output_directory(directory_name="output"):
+    """
+    Create a directory to store scraping results if it doesn't exist
+    """
+    if not os.path.exists(directory_name):
+        os.makedirs(directory_name)
+        logger.info(f"Created directory: {directory_name}")
+    return directory_name
+
+def get_credentials():
+    """
+    Get credentials from environment variables or user input
+    First checks for .env file, then falls back to user input
+    """
+    # Try to load .env file
+    dotenv.load_dotenv()
+    
+    # Check for environment variables
+    email = os.environ.get("LESECHOS_EMAIL")
+    password = os.environ.get("LESECHOS_PASSWORD")
+    
+    # If either is missing, prompt the user
+    if not email:
+        email = input("Enter your email for Les Echos: ")
+    if not password:
+        password = input("Enter your password: ")
+    
+    return email, password
