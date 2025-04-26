@@ -2,6 +2,7 @@
 import argparse
 import json
 import os
+import sys
 from datetime import datetime
 from scraper import LesEchosScraper
 from AI_filter import filter_articles
