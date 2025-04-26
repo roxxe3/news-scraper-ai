@@ -106,7 +106,15 @@ def run_pipeline(topic="Artificial Intelligence", output="filtered_articles.json
     else:
         logger.info(message)
         
-    filtered = filter_articles(articles, topic=topic, verbose=streamlit_container is not None)
+    # Generate dynamic output filename based on topic
+    output = f"filtered_articles_{topic.lower().replace(' ', '_')}.json"
+    
+    filtered = filter_articles(
+        articles, 
+        topic=topic,
+        verbose=streamlit_container is not None,
+        streamlit_mode=streamlit_mode
+    )
     
     message = f"Filtered down to {len(filtered)} articles related to '{topic}'."
     if streamlit_container:

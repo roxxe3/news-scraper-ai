@@ -1,8 +1,10 @@
 import streamlit as st
 import json
-from pipeline import run_pipeline
-from AI_filter import load_json
 import os
+from cli_pipeline import run_cli_pipeline
+from AI_filter import filter_articles
+from save_db import Article, Session, init_db
+from datetime import datetime
 
 st.set_page_config(page_title="News Article Filter", page_icon="📰", layout="centered")
 
@@ -16,6 +18,18 @@ if "selected" not in st.session_state:
 if "pipeline_run" not in st.session_state:
     st.session_state.pipeline_run = False
 
+# Function to load articles from file
+def load_existing_articles(file_path="output/articles.json"):
+    try:
+        if os.path.exists(file_path):
+            with open(file_path, "r", encoding="utf-8") as f:
+                articles = json.load(f)
+            return articles, len(articles) > 0
+        return [], False
+    except Exception as e:
+        st.error(f"Error loading articles: {e}")
+        return [], False
+
 # --- Step 1: Landing Page ---
 if st.session_state.step == "landing":
     st.title("📰 News Article Filter")
@@ -27,96 +41,190 @@ if st.session_state.step == "landing":
 elif st.session_state.step == "load":
     st.header("Step 1: Choose Topic & Load Articles")
     topic = st.text_input("Enter topic to filter for:", value="Artificial Intelligence", key="topic_input")
-    fetch_btn = st.button("📡 Fetch Articles Automatically")
-    articles_loaded = False
     
-    # Create a dedicated area for log display
-    log_container = st.container()
+    col1, col2 = st.columns(2)
+    with col1:
+        fetch_btn = st.button("📡 Fetch New Articles")
+    with col2:
+        # Only show continue button if articles exist
+        articles_exist = os.path.exists("output/articles_with_content.json")
+        continue_btn = st.button("📂 Use Existing Articles", disabled=not articles_exist)
+        if not articles_exist:
+            st.caption("No existing articles found")
     
     if fetch_btn:
-        # Create an expander for detailed logging
-        with st.expander("View Log Stream", expanded=True):
-            # Create a placeholder for real-time progress updates
-            progress_container = st.empty()
-            
-            # Enable Streamlit logging via our custom handler
-            from helpers import enable_streamlit_logging
-            enable_streamlit_logging(progress_container)
-            
-            with st.spinner("Running pipeline..."):
-                # Run the pipeline with real-time feedback
-                run_pipeline(
-                    topic=topic, 
-                    streamlit_mode=True,
-                    streamlit_container=progress_container,
-                    verbose=True  # Always show verbose output in Streamlit
-                )
-            
-        st.session_state.pipeline_run = True
-        articles_loaded = True
-    if articles_loaded or (os.path.exists("output/filtered_articles.json") and st.button("Continue with existing articles")):
-        st.session_state.step = "filter"
+        try:
+            # Create an expander for detailed logging
+            with st.expander("View Log Stream", expanded=True):
+                # Create a container for the log display
+                log_container = st.empty()
+                
+                # Initialize or clear log messages
+                st.session_state.log_messages = []
+                
+                # Custom handler for Streamlit logging
+                def log_callback(message):
+                    st.session_state.log_messages.append(message)
+                    # Update the log display with just the new message
+                    log_container.text_area(
+                        "Latest Logs",
+                        value="\n".join(st.session_state.log_messages[-10:]),
+                        height=400,
+                        disabled=True
+                    )
+                    
+                with st.spinner("Fetching and processing articles..."):
+                    # Run the pipeline with real-time feedback
+                    success = run_cli_pipeline(
+                        topic=topic,
+                        verbose=True,
+                        log_callback=log_callback
+                    )
+                    
+                    if success:
+                        # Load articles with content
+                        articles_file = "output/articles_with_content.json"
+                        if os.path.exists(articles_file):
+                            with open(articles_file, 'r', encoding='utf-8') as f:
+                                articles = json.load(f)
+                                if articles:
+                                    st.session_state.raw_articles = articles
+                                    st.session_state.pipeline_run = True
+                                    st.success(f"Successfully fetched {len(articles)} articles with content!")
+                                    st.session_state.step = "filter"
+                                    st.rerun()
+                                else:
+                                    st.error("No articles with content were found.")
+                        else:
+                            st.error("Failed to load articles after fetching. Please try again.")
+                    else:
+                        st.error("Failed to fetch articles. Please try again.")
+                        
+        except Exception as e:
+            st.error(f"An error occurred while fetching articles: {str(e)}")
+            st.session_state.pipeline_run = False
+    
+    if continue_btn:
+        try:
+            articles_file = "output/articles_with_content.json"
+            if os.path.exists(articles_file):
+                with open(articles_file, 'r', encoding='utf-8') as f:
+                    articles = json.load(f)
+                    if articles:
+                        # Store articles in session state
+                        st.session_state.raw_articles = articles
+                        st.session_state.pipeline_run = True
+                        st.success(f"Loaded {len(articles)} existing articles with content!")
+                        st.session_state.step = "filter"
+                        st.rerun()
+                    else:
+                        st.error("No articles with content found in the existing file.")
+            else:
+                st.error(f"No articles with content found. Try fetching new articles instead.")
+        except Exception as e:
+            st.error(f"An error occurred while loading articles: {str(e)}")
+            st.session_state.pipeline_run = False
 
 # --- Step 3: Filter Articles ---
 elif st.session_state.step == "filter":
     st.header("Step 2: Filter Articles by Topic")
-    topic = st.session_state.get("topic_input", "Artificial Intelligence")
     
-    # Create a container for real-time logging
-    log_container = st.empty()
-    
-    # Only run the pipeline if it wasn't run in the previous step
-    if not st.session_state.pipeline_run and st.button("Run Filter"):
-        with st.spinner("Filtering articles..."):
-            # Create a placeholder for real-time progress updates
-            progress_container = st.container()
-            
-            # Run the pipeline with real-time feedback
-            run_pipeline(
-                topic=topic, 
-                streamlit_mode=True,
-                streamlit_container=progress_container,
-                verbose=True  # Always show verbose output in Streamlit
-            )
-            
-        st.session_state.pipeline_run = True
-        
-    # If pipeline has been run or filtered articles already exist
-    if st.session_state.pipeline_run or os.path.exists("output/filtered_articles.json"):
-        filtered_path = "output/filtered_articles.json"
-        try:
-            filtered_articles = load_json(filtered_path)
-            st.session_state.filtered_articles = filtered_articles
-            st.success(f"🎯 {len(filtered_articles)} articles found related to *{topic}*!")
-            if st.button("Continue to Review"):
-                st.session_state.step = "review"
-                st.experimental_rerun()
-        except Exception as e:
-            st.error(f"Could not load filtered articles: {e}")
+    # Check if we have raw articles to filter
+    if not hasattr(st.session_state, 'raw_articles'):
+        st.error("No articles loaded. Please go back and load articles first.")
+        if st.button("← Back to Load Articles"):
+            st.session_state.step = "load"
+            st.rerun()
     else:
-        st.info("Click 'Run Filter' to process the articles")
+        # Show total articles loaded
+        total_articles = len(st.session_state.raw_articles)
+        st.info(f"📚 {total_articles} articles loaded")
+        
+        # Topic input for AI filtering
+        topic = st.text_input("Enter topic to filter for:", key="topic_input")
+        
+        # Show AI filter button
+        if st.button("🤖 Run AI Filter"):
+            if not topic:
+                st.error("Please enter a topic for AI filtering")
+            else:
+                with st.spinner(f"AI is filtering articles for topic: {topic}..."):
+                    try:
+                        # Load articles with content
+                        articles_with_content_file = "output/articles_with_content.json"
+                        if not os.path.exists(articles_with_content_file):
+                            st.error("No articles with content found. Please try fetching articles again.")
+                            st.session_state.filtered_articles = []
+                            st.session_state.current_topic = topic
+                        else:
+                            with open(articles_with_content_file, 'r', encoding='utf-8') as f:
+                                articles_with_content = json.load(f)
+                            
+                            # Filter the articles using AI
+                            filtered_articles = filter_articles(
+                                articles_with_content,  # Use articles with content
+                                topic=topic,
+                                streamlit_mode=True
+                            )
+                            
+                            # Store filtered results and topic
+                            st.session_state.filtered_articles = filtered_articles
+                            st.session_state.current_topic = topic
+                            
+                            # Save filtered articles to a JSON file
+                            output_dir = "output"
+                            if not os.path.exists(output_dir):
+                                os.makedirs(output_dir)
+                            
+                            filtered_file = os.path.join(output_dir, f"filtered_articles_{topic.lower().replace(' ', '_')}.json")
+                            with open(filtered_file, 'w', encoding='utf-8') as f:
+                                json.dump(filtered_articles, f, indent=4, ensure_ascii=False)
+                            
+                            if filtered_articles:
+                                st.success(f"🎯 {len(filtered_articles)} articles found related to *{topic}*!")
+                            else:
+                                st.warning(f"No articles found matching the topic: {topic}")
+                                
+                    except Exception as e:
+                        st.error(f"An error occurred while filtering articles: {str(e)}")
+                        st.session_state.filtered_articles = []
+        
+        # If we have filtered articles, show the continue button
+        if 'filtered_articles' in st.session_state:
+            filtered_count = len(st.session_state.filtered_articles)
+            if filtered_count > 0:
+                if st.button("Continue to Review"):
+                    st.session_state.step = "review"
+                    st.rerun()
+            else:
+                st.info("Try filtering with a different topic")
 
 # --- Step 4: Review & Select Articles ---
 elif st.session_state.step == "review":
     st.header("Step 3: Review & Select Articles")
     filtered_articles = st.session_state.filtered_articles
-    # Get the topic that was used for filtering
-    topic = st.session_state.get("topic_input", "Artificial Intelligence")
+    topic = st.session_state.get("current_topic", "")
     
     if not filtered_articles:
         st.warning("No filtered articles to review.")
     else:
-        st.write(f"**{len(filtered_articles)} articles found related to '{topic}'.**")
-        select_all = st.checkbox("Select All", value=len(st.session_state.selected) == len(filtered_articles))
+        st.write(f"**{len(filtered_articles)} articles found related to '{topic}'**")
+        select_all = st.checkbox("Select/Deselect All Articles", value=len(st.session_state.selected) == len(filtered_articles))
         if select_all:
             st.session_state.selected = set(range(len(filtered_articles)))
         else:
             st.session_state.selected = set()
+        
         for idx, art in enumerate(filtered_articles):
-            checked = idx in st.session_state.selected
             col1, col2 = st.columns([0.05, 0.95])
             with col1:
-                if st.checkbox("", value=checked, key=f"sel_{idx}"):
+                article_title = art.get('title', '(No Title)')[:20] + "..."
+                if st.checkbox(
+                    label=f"Select article: {article_title}",
+                    value=idx in st.session_state.selected,
+                    key=f"sel_{idx}",
+                    label_visibility="collapsed"
+                ):
                     st.session_state.selected.add(idx)
                 else:
                     st.session_state.selected.discard(idx)
@@ -124,25 +232,44 @@ elif st.session_state.step == "review":
                 st.markdown(f"**{art.get('title','(No Title)')}**  \n{art.get('published_date','')}")
                 st.write(art.get('content','')[:300] + "...")
                 st.write("---")
+        
         st.write(f"Selected: {len(st.session_state.selected)} articles")
         if st.button("💾 Save Selected to Database"):
-            from save_db import Article, Session
-            session = Session()
-            for idx in st.session_state.selected:
-                art = filtered_articles[idx]
-                db_article = Article(
-                    title=art.get("title", ""),
-                    link=art.get("link", ""),
-                    category=art.get("category", ""),
-                    topic=topic,  # Add the topic here
-                    published_date=art.get("published_date"),
-                    updated_date=art.get("updated_date"),
-                    content=art.get("content", "")
-                )
-                session.add(db_article)
-            session.commit()
-            session.close()
-            st.success(f"✅ Selected articles saved to database with topic '{topic}'.")
+            try:
+                # Initialize database
+                if init_db():
+                    session = Session()
+                    for idx in st.session_state.selected:
+                        art = filtered_articles[idx]
+                        # Convert string dates to datetime objects
+                        published_date = None
+                        updated_date = None
+                        if art.get("published_date"):
+                            published_date = datetime.fromisoformat(art["published_date"].replace("Z", "+00:00"))
+                        if art.get("updated_date"):
+                            updated_date = datetime.fromisoformat(art["updated_date"].replace("Z", "+00:00"))
+                        
+                        db_article = Article(
+                            title=art.get("title", ""),
+                            link=art.get("link", ""),
+                            category=art.get("category", ""),
+                            topic=topic,
+                            published_date=published_date,
+                            updated_date=updated_date,
+                            content=art.get("content", "")
+                        )
+                        session.add(db_article)
+                    session.commit()
+                    session.close()
+                    st.success(f"✅ Selected articles saved to database with topic '{topic}'.")
+                else:
+                    st.error("Failed to initialize database connection.")
+            except Exception as e:
+                st.error(f"Failed to save articles to database: {e}")
+                if 'session' in locals():
+                    session.rollback()
+                    session.close()
+                
         if st.button("📄 Export Selected to JSON"):
             selected_arts = [filtered_articles[idx] for idx in st.session_state.selected]
             # Add topic to each exported article

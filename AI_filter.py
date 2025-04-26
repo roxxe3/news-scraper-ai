@@ -18,11 +18,20 @@ def load_json(file_path):
         return json.load(f)
 
 def save_json(data, file_path):
+    # Ensure output directory exists
+    os.makedirs(os.path.dirname(file_path), exist_ok=True)
     with open(file_path, 'w', encoding='utf-8') as f:
         json.dump(data, f, indent=4, ensure_ascii=False)
 
+def get_filtered_filename(topic):
+    # Convert topic to a valid filename by replacing spaces and special chars
+    safe_topic = re.sub(r'[^\w\s-]', '', topic).strip().lower()
+    safe_topic = re.sub(r'[-\s]+', '_', safe_topic)
+    return f"output/filtered_articles_{safe_topic}.json"
+
 def filter_articles(articles, topic="Artificial Intelligence", batch_size=5, model="gpt-4.1-mini", verbose=False, streamlit_mode=False):
     filtered = []
+    last_request_time = 0  # Track the last API request time
     
     message = f"Starting to filter {len(articles)} articles for topic: '{topic}'"
     if streamlit_mode:
@@ -31,6 +40,19 @@ def filter_articles(articles, topic="Artificial Intelligence", batch_size=5, mod
         logger.info(message)
     
     for i in range(0, len(articles), batch_size):
+        # Calculate wait time based on last request
+        current_time = time.time()
+        time_since_last_request = current_time - last_request_time
+        if last_request_time > 0 and time_since_last_request < 20:  # Rate limit: 3 requests per minute
+            wait_time = max(0, 20 - time_since_last_request)
+            if wait_time > 0:
+                wait_message = f"Waiting {wait_time:.1f} seconds for API rate limit..."
+                if streamlit_mode:
+                    log_to_streamlit(wait_message)
+                elif verbose:
+                    logger.info(wait_message)
+                time.sleep(wait_time)
+        
         batch = articles[i:i+batch_size]
         batch_message = f"Processing batch {i//batch_size + 1}/{(len(articles)-1)//batch_size + 1} ({len(batch)} articles)"
         
@@ -70,6 +92,8 @@ def filter_articles(articles, topic="Artificial Intelligence", batch_size=5, mod
                     {"role": "user", "content": batch_content}
                 ]
             )
+            last_request_time = time.time()  # Update last request time
+            
             replies = response.choices[0].message.content.strip().lower()
             matches = re.findall(r"\d+\s*[:.]\s*(yes|no)", replies)
             
@@ -102,21 +126,15 @@ def filter_articles(articles, topic="Artificial Intelligence", batch_size=5, mod
             else:
                 logger.error(error_message)
 
-        # Wait 21 seconds to stay under 3 requests per minute
-        if i + batch_size < len(articles):
-            wait_message = f"Waiting 21 seconds for API rate limit..."
-            if streamlit_mode:
-                log_to_streamlit(wait_message)
-            elif verbose:
-                logger.info(wait_message)
-            time.sleep(21)
-
     summary_message = f"Filtering complete: {len(filtered)}/{len(articles)} articles match the topic '{topic}'"
     if streamlit_mode:
         log_to_streamlit(summary_message)
     else:
         logger.info(summary_message)
         
+    # Save filtered articles with dynamic filename
+    output_file = get_filtered_filename(topic)
+    save_json(filtered, output_file)
     return filtered
 
 def main():
@@ -126,7 +144,7 @@ def main():
     args = parser.parse_args()
 
     input_file = "output/articles.json"
-    output_file = "output/filtered_articles.json"
+    output_file = get_filtered_filename(args.topic)
 
     articles = load_json(input_file)
     logger.info(f"Loaded {len(articles)} articles from {input_file}")
@@ -134,7 +152,6 @@ def main():
     filtered = filter_articles(articles, topic=args.topic, verbose=args.verbose)
 
     logger.info(f"Found {len(filtered)} articles related to '{args.topic}'")
-    save_json(filtered, output_file)
     logger.info(f"Filtered articles saved to {output_file}")
 
 if __name__ == "__main__":

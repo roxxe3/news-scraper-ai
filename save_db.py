@@ -2,12 +2,18 @@ from sqlalchemy import create_engine, Column, Integer, String, Text, DateTime
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker
 from datetime import datetime
+import os
+from dotenv import load_dotenv
+from helpers import logger
 
-# Define your database URL (adjust the username, password, host, and database name)
-DATABASE_URL = "postgresql://username:password@localhost/mydatabase"
+# Load environment variables
+load_dotenv()
 
-# Create an engine to connect to the database
-engine = create_engine(DATABASE_URL)
+# Get database URL from environment variable with fallback
+DATABASE_URL = os.getenv(
+    "DATABASE_URL", 
+    "postgresql://username:password@localhost/mydatabase"
+)
 
 # Define a base class using SQLAlchemy
 Base = declarative_base()
@@ -24,6 +30,25 @@ class Article(Base):
     published_date = Column(DateTime)
     updated_date = Column(DateTime)
     content = Column(Text)
+    
+    def __repr__(self):
+        return f"<Article(title='{self.title[:30]}...', category='{self.category}', topic='{self.topic}')>"
 
-# Create a session factory to interact with the database
-Session = sessionmaker(bind=engine)
+# Create an engine and session factory
+try:
+    engine = create_engine(DATABASE_URL)
+    Base.metadata.create_all(engine)
+    Session = sessionmaker(bind=engine)
+    logger.info("Database initialized successfully")
+except Exception as e:
+    logger.error(f"Failed to initialize database: {e}")
+    raise
+
+def init_db():
+    """Initialize database connection and create tables if they don't exist"""
+    try:
+        Base.metadata.create_all(engine)
+        return True
+    except Exception as e:
+        logger.error(f"Failed to initialize database tables: {e}")
+        return False
