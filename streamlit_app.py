@@ -17,6 +17,29 @@ if "selected" not in st.session_state:
     st.session_state.selected = set()
 if "pipeline_run" not in st.session_state:
     st.session_state.pipeline_run = False
+if "topic" not in st.session_state:
+    st.session_state.topic = "Artificial Intelligence"  # Default topic
+if "is_fetching" not in st.session_state:
+    st.session_state.is_fetching = False
+
+def return_to_main():
+    # Reset all necessary session state variables except step
+    st.session_state.is_fetching = False
+    st.session_state.filtered_articles = []
+    st.session_state.selected = set()
+    st.session_state.pipeline_run = False
+    st.session_state.step = "load"  # Go directly to load step
+
+# Function to show main menu button
+def show_main_menu_button():
+    # Show on filter and review steps
+    if st.session_state.step in ["filter", "review"]:
+        col1, col2, col3 = st.columns([1, 3, 1])
+        with col1:
+            st.button("🏠 Main Menu", on_click=return_to_main)
+
+def start_fetching():
+    st.session_state.is_fetching = True
 
 # Function to load articles from file
 def load_existing_articles(file_path="output/articles.json"):
@@ -39,20 +62,24 @@ if st.session_state.step == "landing":
 
 # --- Step 2: Load Articles & Topic Selection ---
 elif st.session_state.step == "load":
-    st.header("Step 1: Choose Topic & Load Articles")
-    topic = st.text_input("Enter topic to filter for:", value="Artificial Intelligence", key="topic_input")
+    st.header("Step 1: Load Articles")
     
     col1, col2 = st.columns(2)
     with col1:
-        fetch_btn = st.button("📡 Fetch New Articles")
+        fetch_btn = st.button("📡 Fetch New Articles", 
+                            disabled=st.session_state.is_fetching,
+                            on_click=start_fetching)
+        if st.session_state.is_fetching:
+            st.info("Fetching articles in progress...")
     with col2:
         # Only show continue button if articles exist
         articles_exist = os.path.exists("output/articles_with_content.json")
-        continue_btn = st.button("📂 Use Existing Articles", disabled=not articles_exist)
+        continue_btn = st.button("📂 Use Existing Articles", 
+                               disabled=not articles_exist or st.session_state.is_fetching)
         if not articles_exist:
             st.caption("No existing articles found")
     
-    if fetch_btn:
+    if st.session_state.is_fetching:
         try:
             # Create an expander for detailed logging
             with st.expander("View Log Stream", expanded=True):
@@ -76,7 +103,7 @@ elif st.session_state.step == "load":
                 with st.spinner("Fetching and processing articles..."):
                     # Run the pipeline with real-time feedback
                     success = run_cli_pipeline(
-                        topic=topic,
+                        topic=st.session_state.topic,
                         verbose=True,
                         log_callback=log_callback
                     )
@@ -91,18 +118,23 @@ elif st.session_state.step == "load":
                                     st.session_state.raw_articles = articles
                                     st.session_state.pipeline_run = True
                                     st.success(f"Successfully fetched {len(articles)} articles with content!")
+                                    st.session_state.is_fetching = False
                                     st.session_state.step = "filter"
                                     st.rerun()
                                 else:
                                     st.error("No articles with content were found.")
+                                    st.session_state.is_fetching = False
                         else:
                             st.error("Failed to load articles after fetching. Please try again.")
+                            st.session_state.is_fetching = False
                     else:
                         st.error("Failed to fetch articles. Please try again.")
+                        st.session_state.is_fetching = False
                         
         except Exception as e:
             st.error(f"An error occurred while fetching articles: {str(e)}")
             st.session_state.pipeline_run = False
+            st.session_state.is_fetching = False
     
     if continue_btn:
         try:
@@ -127,6 +159,7 @@ elif st.session_state.step == "load":
 
 # --- Step 3: Filter Articles ---
 elif st.session_state.step == "filter":
+    show_main_menu_button()
     st.header("Step 2: Filter Articles by Topic")
     
     # Check if we have raw articles to filter
@@ -140,22 +173,28 @@ elif st.session_state.step == "filter":
         total_articles = len(st.session_state.raw_articles)
         st.info(f"📚 {total_articles} articles loaded")
         
-        # Topic input for AI filtering
-        topic = st.text_input("Enter topic to filter for:", key="topic_input")
+        # Topic input with validation
+        topic = st.text_input(
+            "Enter topic to filter for:",
+            value=st.session_state.topic,
+            key="topic_input"
+        )
+        if topic.strip():  # Update session state only if topic is not empty
+            st.session_state.topic = topic.strip()
         
         # Show AI filter button
         if st.button("🤖 Run AI Filter"):
-            if not topic:
+            if not st.session_state.topic:
                 st.error("Please enter a topic for AI filtering")
             else:
-                with st.spinner(f"AI is filtering articles for topic: {topic}..."):
+                with st.spinner(f"AI is filtering articles for topic: {st.session_state.topic}..."):
                     try:
                         # Load articles with content
                         articles_with_content_file = "output/articles_with_content.json"
                         if not os.path.exists(articles_with_content_file):
                             st.error("No articles with content found. Please try fetching articles again.")
                             st.session_state.filtered_articles = []
-                            st.session_state.current_topic = topic
+                            st.session_state.current_topic = st.session_state.topic
                         else:
                             with open(articles_with_content_file, 'r', encoding='utf-8') as f:
                                 articles_with_content = json.load(f)
@@ -163,27 +202,27 @@ elif st.session_state.step == "filter":
                             # Filter the articles using AI
                             filtered_articles = filter_articles(
                                 articles_with_content,  # Use articles with content
-                                topic=topic,
+                                topic=st.session_state.topic,
                                 streamlit_mode=True
                             )
                             
                             # Store filtered results and topic
                             st.session_state.filtered_articles = filtered_articles
-                            st.session_state.current_topic = topic
+                            st.session_state.current_topic = st.session_state.topic
                             
                             # Save filtered articles to a JSON file
                             output_dir = "output"
                             if not os.path.exists(output_dir):
                                 os.makedirs(output_dir)
                             
-                            filtered_file = os.path.join(output_dir, f"filtered_articles_{topic.lower().replace(' ', '_')}.json")
+                            filtered_file = os.path.join(output_dir, f"filtered_articles_{st.session_state.topic.lower().replace(' ', '_')}.json")
                             with open(filtered_file, 'w', encoding='utf-8') as f:
                                 json.dump(filtered_articles, f, indent=4, ensure_ascii=False)
                             
                             if filtered_articles:
-                                st.success(f"🎯 {len(filtered_articles)} articles found related to *{topic}*!")
+                                st.success(f"🎯 {len(filtered_articles)} articles found related to *{st.session_state.topic}*!")
                             else:
-                                st.warning(f"No articles found matching the topic: {topic}")
+                                st.warning(f"No articles found matching the topic: {st.session_state.topic}")
                                 
                     except Exception as e:
                         st.error(f"An error occurred while filtering articles: {str(e)}")
@@ -201,6 +240,7 @@ elif st.session_state.step == "filter":
 
 # --- Step 4: Review & Select Articles ---
 elif st.session_state.step == "review":
+    show_main_menu_button()
     st.header("Step 3: Review & Select Articles")
     filtered_articles = st.session_state.filtered_articles
     topic = st.session_state.get("current_topic", "")

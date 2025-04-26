@@ -5,6 +5,7 @@ import re
 import argparse
 import time
 from helpers import logger, log_to_streamlit
+import streamlit as st
 
 # Initialize OpenAI client
 openai_api_key = os.getenv("OPENAI_API_KEY")
@@ -29,38 +30,46 @@ def get_filtered_filename(topic):
     safe_topic = re.sub(r'[-\s]+', '_', safe_topic)
     return f"output/filtered_articles_{safe_topic}.json"
 
-def filter_articles(articles, topic="Artificial Intelligence", batch_size=5, model="gpt-4.1-mini", verbose=False, streamlit_mode=False):
-    filtered = []
-    last_request_time = 0  # Track the last API request time
+def filter_articles(articles, topic="Artificial Intelligence", streamlit_mode=False):
+    """
+    Filter articles based on a topic using OpenAI's API.
     
-    message = f"Starting to filter {len(articles)} articles for topic: '{topic}'"
+    Args:
+        articles (list): List of article dictionaries with content
+        topic (str): Topic to filter for, defaults to "Artificial Intelligence"
+        streamlit_mode (bool): Whether to use streamlit progress bar
+    
+    Returns:
+        list: Filtered list of articles related to the topic
+    """
+    # Validate topic
+    if not topic or not isinstance(topic, str):
+        topic = "Artificial Intelligence"  # Fallback to default
+    topic = topic.strip()
+    
+    # Initialize OpenAI client
+    client = OpenAI()
+    
+    # Initialize progress tracking
+    total_articles = len(articles)
     if streamlit_mode:
-        log_to_streamlit(message)
-    else:
-        logger.info(message)
+        progress_bar = st.progress(0)
+        status_text = st.empty()
     
-    for i in range(0, len(articles), batch_size):
-        # Calculate wait time based on last request
-        current_time = time.time()
-        time_since_last_request = current_time - last_request_time
-        if last_request_time > 0 and time_since_last_request < 20:  # Rate limit: 3 requests per minute
-            wait_time = max(0, 20 - time_since_last_request)
-            if wait_time > 0:
-                wait_message = f"Waiting {wait_time:.1f} seconds for API rate limit..."
-                if streamlit_mode:
-                    log_to_streamlit(wait_message)
-                elif verbose:
-                    logger.info(wait_message)
-                time.sleep(wait_time)
-        
+    # Process articles in batches to respect rate limits
+    filtered_articles = []
+    batch_size = 5
+    for i in range(0, total_articles, batch_size):
         batch = articles[i:i+batch_size]
-        batch_message = f"Processing batch {i//batch_size + 1}/{(len(articles)-1)//batch_size + 1} ({len(batch)} articles)"
         
+        # Update progress
+        progress = (i + 1) / total_articles
         if streamlit_mode:
-            log_to_streamlit(batch_message)
-        elif verbose:
-            logger.info(batch_message)
-
+            progress_bar.progress(progress)
+            status_text.text(f"Processing articles {i+1}-{min(i+batch_size, total_articles)} of {total_articles}")
+        else:
+            print(f"Processing articles {i+1}-{min(i+batch_size, total_articles)} of {total_articles}")
+        
         prompt = f"""You are a professional news analyst.
 
                     You will receive a list of articles. For each article, answer ONLY "yes" if it is clearly related to the topic "{topic}", otherwise answer "no".
@@ -85,39 +94,26 @@ def filter_articles(articles, topic="Artificial Intelligence", batch_size=5, mod
 
         try:
             response = openai_client.chat.completions.create(
-                model=model,
+                model="gpt-4.1-mini",
                 temperature=0.2,
                 messages=[
                     {"role": "system", "content": prompt},
                     {"role": "user", "content": batch_content}
                 ]
             )
-            last_request_time = time.time()  # Update last request time
             
             replies = response.choices[0].message.content.strip().lower()
             matches = re.findall(r"\d+\s*[:.]\s*(yes|no)", replies)
             
-            if verbose or streamlit_mode:
-                response_message = f"AI responses for batch: {matches}"
-                if streamlit_mode:
-                    log_to_streamlit(response_message)
-                else:
-                    logger.debug(response_message)
-
             for idx, (article, decision) in enumerate(zip(batch, matches)):
                 if decision == "yes":
                     article_message = f"Article accepted: {article.get('title', '')[:40]}..."
                     if streamlit_mode:
                         log_to_streamlit(article_message)
-                    elif verbose:
-                        logger.info(article_message)
-                    filtered.append(article)
-                elif verbose or streamlit_mode:
+                    filtered_articles.append(article)
+                elif streamlit_mode:
                     article_message = f"Article rejected: {article.get('title', '')[:40]}..."
-                    if streamlit_mode:
-                        log_to_streamlit(article_message)
-                    else:
-                        logger.debug(article_message)
+                    log_to_streamlit(article_message)
 
         except Exception as e:
             error_message = f"Error during batch processing: {e}"
@@ -126,7 +122,7 @@ def filter_articles(articles, topic="Artificial Intelligence", batch_size=5, mod
             else:
                 logger.error(error_message)
 
-    summary_message = f"Filtering complete: {len(filtered)}/{len(articles)} articles match the topic '{topic}'"
+    summary_message = f"Filtering complete: {len(filtered_articles)}/{total_articles} articles match the topic '{topic}'"
     if streamlit_mode:
         log_to_streamlit(summary_message)
     else:
@@ -134,8 +130,8 @@ def filter_articles(articles, topic="Artificial Intelligence", batch_size=5, mod
         
     # Save filtered articles with dynamic filename
     output_file = get_filtered_filename(topic)
-    save_json(filtered, output_file)
-    return filtered
+    save_json(filtered_articles, output_file)
+    return filtered_articles
 
 def main():
     parser = argparse.ArgumentParser(description="Filter articles by topic using OpenAI")
@@ -149,7 +145,7 @@ def main():
     articles = load_json(input_file)
     logger.info(f"Loaded {len(articles)} articles from {input_file}")
 
-    filtered = filter_articles(articles, topic=args.topic, verbose=args.verbose)
+    filtered = filter_articles(articles, topic=args.topic, streamlit_mode=True)
 
     logger.info(f"Found {len(filtered)} articles related to '{args.topic}'")
     logger.info(f"Filtered articles saved to {output_file}")

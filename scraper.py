@@ -33,12 +33,11 @@ class LesEchosScraper:
         # Add all category URLs
         self.category_urls = [
             'https://www.lesechos.fr',
-            'https://www.lesechos.fr/economie-france',
             'https://www.lesechos.fr/politique-societe',
             # 'https://www.lesechos.fr/industrie-services',
             # 'https://www.lesechos.fr/bourse',
             # 'https://www.lesechos.fr/monde',
-            # 'https://www.lesechos.fr/tech-medias',
+            #'https://www.lesechos.fr/tech-medias',
             # 'https://www.lesechos.fr/start-up',
             # 'https://www.lesechos.fr/pme-regions',
             # 'https://www.lesechos.fr/patrimoine',
