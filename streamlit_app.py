@@ -28,12 +28,14 @@ if "is_fetching" not in st.session_state:
     st.session_state.is_fetching = False
 
 def return_to_main():
-    # Reset all necessary session state variables except step
     st.session_state.is_fetching = False
     st.session_state.filtered_articles = []
     st.session_state.selected = set()
     st.session_state.pipeline_run = False
-    st.session_state.step = "load"  # Go directly to load step
+    st.session_state.step = "load"
+
+def navigate_to(step):
+    st.session_state.step = step
 
 # Function to show main menu button
 def show_main_menu_button():
@@ -62,8 +64,7 @@ def load_existing_articles(file_path="output/articles.json"):
 if st.session_state.step == "landing":
     st.title("📰 News Article Filter")
     st.markdown("A simple tool to filter news articles by topic using AI.")
-    if st.button("🚀 Start"):
-        st.session_state.step = "load"
+    st.button("🚀 Start", on_click=navigate_to, args=("load",))
 
 # --- Step 2: Load Articles & Topic Selection ---
 elif st.session_state.step == "load":

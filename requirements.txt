@@ -3,4 +3,8 @@ requests==2.31.0
 beautifulsoup4==4.12.3
 openai==1.12.0
 sqlalchemy==2.0.27
-reportlab==4.1.0 
+reportlab==4.1.0
+tenacity==8.2.3
+python-dotenv==1.0.1
+hrequests==0.6.0
+playwright==1.42.0 

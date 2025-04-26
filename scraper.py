@@ -7,6 +7,8 @@ from helpers import logger  # Import the logger
 import warnings
 import os
 from datetime import datetime, timedelta, timezone
+import time
+from requests.exceptions import RequestException, ConnectionError, Timeout
 
 # Suppress the hrequests warning about the optional dependencies
 warnings.filterwarnings("ignore", message="Please run pip install hrequests")
@@ -15,11 +17,13 @@ class LesEchosScraper:
     """
     Class to scrape articles from LesEchos website
     """
-    def __init__(self, base_url='https://www.lesechos.fr', verbose=False, cache_dir='cache', log_callback=None):
+    def __init__(self, base_url='https://www.lesechos.fr', verbose=False, cache_dir='cache', log_callback=None, max_retries=3, retry_delay=5):
         self.base_url = base_url
         self.verbose = verbose
         self.cache_dir = cache_dir
         self.log_callback = log_callback
+        self.max_retries = max_retries
+        self.retry_delay = retry_delay
         self.headers = {
             'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/135.0.0.0 Safari/537.36'
         }
@@ -33,10 +37,10 @@ class LesEchosScraper:
         # Add all category URLs
         self.category_urls = [
             'https://www.lesechos.fr',
-            'https://www.lesechos.fr/politique-societe',
+            #'https://www.lesechos.fr/politique-societe',
             # 'https://www.lesechos.fr/industrie-services',
-            # 'https://www.lesechos.fr/bourse',
-            # 'https://www.lesechos.fr/monde',
+            #'https://www.lesechos.fr/bourse',
+             'https://www.lesechos.fr/monde',
             #'https://www.lesechos.fr/tech-medias',
             # 'https://www.lesechos.fr/start-up',
             # 'https://www.lesechos.fr/pme-regions',
@@ -59,6 +63,51 @@ class LesEchosScraper:
         if self.log_callback:
             self.log_callback(formatted_msg)
 
+    def make_request(self, url, method='get', data=None):
+        """Helper method to make HTTP requests with retries"""
+        for attempt in range(self.max_retries):
+            try:
+                if method.lower() == 'get':
+                    response = hrequests.get(url, headers=self.headers)
+                else:
+                    response = hrequests.post(url, headers=self.headers, data=data)
+                
+                # Check status code manually since hrequests doesn't have raise_for_status
+                if response.status_code >= 400:
+                    raise RequestException(f"HTTP {response.status_code}: {response.text}")
+                    
+                return response
+                
+            except ConnectionError as e:
+                self.log_message(f"Connection error on attempt {attempt + 1}/{self.max_retries}: {e}", "ERROR")
+                if attempt < self.max_retries - 1:
+                    time.sleep(self.retry_delay)
+                    continue
+                raise
+                
+            except Timeout as e:
+                self.log_message(f"Timeout error on attempt {attempt + 1}/{self.max_retries}: {e}", "ERROR")
+                if attempt < self.max_retries - 1:
+                    time.sleep(self.retry_delay)
+                    continue
+                raise
+                
+            except RequestException as e:
+                self.log_message(f"Request error on attempt {attempt + 1}/{self.max_retries}: {e}", "ERROR")
+                if attempt < self.max_retries - 1:
+                    time.sleep(self.retry_delay)
+                    continue
+                raise
+            
+            except Exception as e:
+                self.log_message(f"Unexpected error on attempt {attempt + 1}/{self.max_retries}: {e}", "ERROR")
+                if attempt < self.max_retries - 1:
+                    time.sleep(self.retry_delay)
+                    continue
+                raise
+        
+        raise Exception(f"Failed to make request to {url} after {self.max_retries} attempts")
+
     def get_articles_urls_from_page(self, url, use_cache=True):
         """
         Get non-premium article URLs from a specific page
@@ -79,33 +128,44 @@ class LesEchosScraper:
                 if self.verbose:
                     self.log_message(f"Using cached data for {url}")
                 return cached_items
+            except json.JSONDecodeError as e:
+                self.log_message(f"Invalid JSON in cache file {cache_file}: {e}", "WARNING")
             except Exception as e:
                 self.log_message(f"Failed to load cache for {url}: {e}", "WARNING")
 
-        response = hrequests.get(url, headers=self.headers)
-        items = []
-        if response.status_code == 200:
+        try:
+            response = self.make_request(url)
+            items = []
+            
             soup = BeautifulSoup(response.content, 'html.parser')
             
             articles = soup.find_all('article')
+            if not articles:
+                self.log_message(f"No articles found on {url}. Page structure may have changed.", "WARNING")
+                return []
+                
             for article in articles:
-                title_tag = article.find('h3')
-                if title_tag and not title_tag.find('span'):  # Skip if <h3> contains a <span> (premium)
-                    link = article.find('a')
-                    if link and 'href' in link.attrs:
-                        href = link['href']
-                        # Ensure the link is absolute
-                        if href.startswith('/'):
-                            full_link = f"https://www.lesechos.fr{href}"
-                        else:
-                            full_link = href
-                            
-                        item = {
-                            "title": title_tag.get_text().replace('\xa0', ' ').strip(),
-                            "link": full_link,
-                            "category": url.split('https://www.lesechos.fr/')[-1] or "homepage"
-                        }
-                        items.append(item)
+                try:
+                    title_tag = article.find('h3')
+                    if title_tag and not title_tag.find('span'):  # Skip if <h3> contains a <span> (premium)
+                        link = article.find('a')
+                        if link and 'href' in link.attrs:
+                            href = link['href']
+                            # Ensure the link is absolute
+                            if href.startswith('/'):
+                                full_link = f"https://www.lesechos.fr{href}"
+                            else:
+                                full_link = href
+                                
+                            item = {
+                                "title": title_tag.get_text().replace('\xa0', ' ').strip(),
+                                "link": full_link,
+                                "category": url.split('https://www.lesechos.fr/')[-1] or "homepage"
+                            }
+                            items.append(item)
+                except Exception as e:
+                    self.log_message(f"Error processing article on {url}: {e}", "WARNING")
+                    continue
             
             if self.verbose:
                 self.log_message(f"Found {len(items)} non-premium articles on {url}")
@@ -119,8 +179,9 @@ class LesEchosScraper:
                     self.log_message(f"Failed to cache results for {url}: {e}", "WARNING")
 
             return items
-        else:
-            self.log_message(f"Failed to retrieve articles from {url}. Status code: {response.status_code}", "ERROR")
+            
+        except Exception as e:
+            self.log_message(f"Failed to retrieve articles from {url}: {e}", "ERROR")
             return []
     
     def get_articles_urls(self):
