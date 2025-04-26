@@ -20,20 +20,10 @@ class Article(Base):
     title = Column(String(255), nullable=False)
     link = Column(String(255), nullable=False)
     category = Column(String(100))
+    topic = Column(String(100))
     published_date = Column(DateTime)
     updated_date = Column(DateTime)
     content = Column(Text)
 
-# Create a session to interact with the database
+# Create a session factory to interact with the database
 Session = sessionmaker(bind=engine)
-session = Session()
-
-# Query all rows from the articles table
-articles = session.query(Article).all()
-
-# Print the articles
-for article in articles:
-    print(f"ID: {article.id}, Title: {article.title}, Link: {article.link}, Category: {article.category}")
-
-# Close the session
-session.close()

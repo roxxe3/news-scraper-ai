@@ -2,79 +2,129 @@ from datetime import datetime
 from urllib.parse import unquote
 import os
 import logging
+import sys
 import dotenv
+import streamlit as st
 
 # Configure logging
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-    datefmt='%Y-%m-%d %H:%M:%S'
-)
-logger = logging.getLogger('news_scraper')
+def configure_logging(level=logging.INFO, to_console=True):
+    """
+    Configure the logging system with customizable options
+    
+    Args:
+        level: The logging level (default: INFO)
+        to_console: Whether to output logs to console (default: True)
+    """
+    logger = logging.getLogger('news_scraper')
+    logger.setLevel(level)
+    logger.handlers = []  # Clear existing handlers
+    
+    formatter = logging.Formatter(
+        '%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+        datefmt='%Y-%m-%d %H:%M:%S'
+    )
+    
+    # Always log to file for debugging
+    file_handler = logging.FileHandler('news_scraper.log')
+    file_handler.setFormatter(formatter)
+    logger.addHandler(file_handler)
+    
+    # Optionally log to console
+    if to_console:
+        console_handler = logging.StreamHandler(sys.stdout)
+        console_handler.setFormatter(formatter)
+        logger.addHandler(console_handler)
+    
+    return logger
 
-#not used atm since i found meta data with dates in each article
+# Initialize default logger
+logger = configure_logging()
 
-# def process_article_dates(dates_text):
-#     """
-#     Process and extract dates from article text
-#     Returns a list of [published_date, updated_date] in ISO format
-#     """
-#     if not dates_text:
-#         return [None, None]
+# Helper function to temporarily suppress console output
+def set_console_logging(enabled=True):
+    """Enable or disable console logging without affecting file logging"""
+    logger = logging.getLogger('news_scraper')
+    
+    # Remove any existing console handlers
+    for handler in list(logger.handlers):
+        if isinstance(handler, logging.StreamHandler) and handler.stream == sys.stdout:
+            logger.removeHandler(handler)
+    
+    # Add console handler if enabled
+    if enabled:
+        formatter = logging.Formatter(
+            '%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+            datefmt='%Y-%m-%d %H:%M:%S'
+        )
+        console_handler = logging.StreamHandler(sys.stdout)
+        console_handler.setFormatter(formatter)
+        logger.addHandler(console_handler)
 
-#     try:
-#         date_parts = []
-#         if "Mis à jour le" in dates_text:
-#             split_parts = dates_text.split("Mis à jour le")
-#             published_text = split_parts[0].strip()
-#             updated_text = "Mis à jour le " + split_parts[1].strip()
-#             date_parts = [published_text, updated_text]
-#         else:
-#             date_parts = [dates_text.strip(), None]
+# Stream for showing feedback in the Streamlit UI
+class StreamlitLogHandler:
+    """Handler that displays logs in the Streamlit UI"""
+    def __init__(self):
+        self.st_container = None
+        self.logs = []  # Store log history
+    
+    def set_container(self, container):
+        """Set the Streamlit container to write logs to"""
+        self.st_container = container
+        
+    def log(self, message):
+        """Log a message to the Streamlit UI if a container is set"""
+        timestamp = datetime.now().strftime('%H:%M:%S')
+        formatted_msg = f"{timestamp} - {message}"
+        self.logs.append(formatted_msg)  # Add to history
+        
+        if self.st_container:
+            # Display all logs as a continuous stream
+            log_text = "\n".join(self.logs)
+            self.st_container.text_area("Log Stream", log_text, height=300, disabled=True)
 
-#         result_dates = []
-#         for date_text in date_parts:
-#             if not date_text:
-#                 result_dates.append(None)
-#                 continue
+# Create a singleton instance of the StreamlitLogHandler
+streamlit_handler = StreamlitLogHandler()
 
-#             if date_text.startswith("Publié le"):
-#                 date_text = " ".join(date_text.split()[2:])
-#             elif date_text.startswith("Mis à jour le"):
-#                 date_text = " ".join(date_text.split()[4:])
+class StreamlitLoggingHandler(logging.Handler):
+    """A custom logging handler that sends logs to the Streamlit UI"""
+    
+    def __init__(self, streamlit_handler):
+        super().__init__()
+        self.streamlit_handler = streamlit_handler
+        formatter = logging.Formatter('%(levelname)s - %(message)s')
+        self.setFormatter(formatter)
+    
+    def emit(self, record):
+        try:
+            message = self.format(record)
+            self.streamlit_handler.log(message)
+        except Exception:
+            self.handleError(record)
 
-#             parts = date_text.split()
-#             if len(parts) < 5:
-#                 result_dates.append(None)
-#                 continue
+# Function to add Streamlit logging handler to logger
+def enable_streamlit_logging(streamlit_container):
+    """
+    Configure logging to output to a Streamlit container
+    
+    Args:
+        streamlit_container: Streamlit container to write logs to
+    """
+    logger = logging.getLogger('news_scraper')
+    
+    # Set the container for our singleton handler
+    streamlit_handler.set_container(streamlit_container)
+    
+    # Add a StreamlitLoggingHandler to the logger
+    st_logging_handler = StreamlitLoggingHandler(streamlit_handler)
+    logger.addHandler(st_logging_handler)
+    
+    # Return the handler in case it needs to be removed later
+    return st_logging_handler
 
-#             day = int(parts[0])
-#             month_abbr_fr = parts[1]
-#             year = int(parts[2])
-#             time_str = parts[4]
-#             hour, minute = map(int, time_str.split(':'))
-
-#             month_dict_fr = {
-#                 'janv.': 1, 'févr.': 2, 'mars': 3, 'avr.': 4, 'mai': 5, 'juin': 6,
-#                 'juil.': 7, 'août': 8, 'sept.': 9, 'oct.': 10, 'nov.': 11, 'déc.': 12
-#             }
-
-#             month = month_dict_fr.get(month_abbr_fr.lower())
-#             if not month:
-#                 result_dates.append(None)
-#                 continue
-
-#             dt_object = datetime(year, month, day, hour, minute)
-#             result_dates.append(dt_object.isoformat())
-
-#         while len(result_dates) < 2:
-#             result_dates.append(None)
-
-#         return result_dates[:2]
-
-#     except Exception as e:
-#         logger.error(f"Error processing dates: {e}")
-#         return [None, None]
+def log_to_streamlit(message):
+    """Utility function to log message to both logger and Streamlit UI"""
+    logger.info(message)
+    streamlit_handler.log(message)
 
 def save_html_to_file(html_content, filename="output.html"):
     """
