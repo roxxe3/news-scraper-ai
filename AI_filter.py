@@ -3,6 +3,7 @@ import json
 from openai import OpenAI
 import re
 import argparse
+import time
 
 # Initialize OpenAI client
 openai_api_key = os.getenv("OPENAI_API_KEY")
@@ -65,6 +66,10 @@ def filter_articles(articles, topic="Artificial Intelligence", batch_size=5, mod
         except Exception as e:
             print(f"Error during batch processing: {e}")
 
+        # Wait 21 seconds to stay under 3 requests per minute
+        if i + batch_size < len(articles):
+            time.sleep(21)
+
     return filtered
 
 def main():
@@ -73,7 +78,7 @@ def main():
     args = parser.parse_args()
 
     input_file = "output/articles.json"
-    output_file = f"filtered_{args.topic.replace(' ', '_').lower()}.json"
+    output_file = "output/filtered_articles.json"
 
     articles = load_json(input_file)
     print(f"Loaded {len(articles)} articles")
