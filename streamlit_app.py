@@ -5,6 +5,11 @@ from cli_pipeline import run_cli_pipeline
 from AI_filter import filter_articles
 from save_db import Article, Session, init_db
 from datetime import datetime
+from reportlab.pdfgen import canvas
+from reportlab.lib.pagesizes import letter
+from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer
+from io import BytesIO
 
 st.set_page_config(page_title="News Article Filter", page_icon="📰", layout="centered")
 
@@ -310,14 +315,90 @@ elif st.session_state.step == "review":
                     session.rollback()
                     session.close()
                 
-        if st.button("📄 Export Selected to JSON"):
-            selected_arts = [filtered_articles[idx] for idx in st.session_state.selected]
-            # Add topic to each exported article
-            for art in selected_arts:
-                art["topic"] = topic
-            st.download_button(
-                label="Download Selected Articles as JSON",
-                data=json.dumps(selected_arts, indent=2, ensure_ascii=False),
-                file_name=f"selected_articles_{topic.lower().replace(' ', '_')}.json",
-                mime="application/json"
-            )
+        col1, col2 = st.columns(2)
+        with col1:
+            if st.button("📄 Export Selected to JSON"):
+                selected_arts = [filtered_articles[idx] for idx in st.session_state.selected]
+                # Add topic to each exported article
+                for art in selected_arts:
+                    art["topic"] = topic
+                st.download_button(
+                    label="Download Selected Articles as JSON",
+                    data=json.dumps(selected_arts, indent=2, ensure_ascii=False),
+                    file_name=f"selected_articles_{topic.lower().replace(' ', '_')}.json",
+                    mime="application/json"
+                )
+        
+        with col2:
+            if st.button("📑 Export Selected Articles to PDF"):
+                selected_arts = [filtered_articles[idx] for idx in st.session_state.selected]
+                
+                if selected_arts:
+                    # Create PDF using reportlab
+                    buffer = BytesIO()
+                    doc = SimpleDocTemplate(buffer, pagesize=letter)
+                    story = []
+                    styles = getSampleStyleSheet()
+                    
+                    # Create custom styles
+                    title_style = ParagraphStyle(
+                        'CustomTitle',
+                        parent=styles['Heading1'],
+                        fontSize=16,
+                        spaceAfter=30
+                    )
+                    heading_style = ParagraphStyle(
+                        'CustomHeading',
+                        parent=styles['Heading2'],
+                        fontSize=14,
+                        spaceAfter=12
+                    )
+                    date_style = ParagraphStyle(
+                        'CustomDate',
+                        parent=styles['Italic'],
+                        fontSize=10,
+                        spaceAfter=12
+                    )
+                    content_style = ParagraphStyle(
+                        'CustomContent',
+                        parent=styles['Normal'],
+                        fontSize=12,
+                        spaceAfter=20
+                    )
+                    
+                    # Add main title
+                    story.append(Paragraph(f'News Articles - {topic}', title_style))
+                    story.append(Spacer(1, 20))
+                    
+                    # Add articles
+                    for article in selected_arts:
+                        # Add title
+                        story.append(Paragraph(article['title'], heading_style))
+                        
+                        # Add date
+                        if article.get('published_date'):
+                            story.append(Paragraph(f"Published: {article['published_date']}", date_style))
+                        
+                        # Add content - split by newlines and create separate paragraphs
+                        content_paragraphs = article['content'].split('\n')
+                        for paragraph in content_paragraphs:
+                            if paragraph.strip():  # Only add non-empty paragraphs
+                                story.append(Paragraph(paragraph.strip(), content_style))
+                        story.append(Spacer(1, 20))
+                    
+                    # Build PDF
+                    doc.build(story)
+                    
+                    # Get PDF data
+                    pdf_data = buffer.getvalue()
+                    buffer.close()
+                    
+                    # Create download button
+                    st.download_button(
+                        label="Download PDF",
+                        data=pdf_data,
+                        file_name=f"{topic}_articles.pdf",
+                        mime="application/pdf"
+                    )
+                else:
+                    st.warning("Please select at least one article to export.")
