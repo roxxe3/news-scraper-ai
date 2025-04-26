@@ -3,14 +3,13 @@ from bs4 import BeautifulSoup
 from playwright.sync_api import sync_playwright
 from urllib.parse import urlparse, quote, unquote
 import json
-from helpers import logger  # Import the logger
+from helpers import logger
 import warnings
 import os
 from datetime import datetime, timedelta, timezone
 import time
 from requests.exceptions import RequestException, ConnectionError, Timeout
 
-# Suppress the hrequests warning about the optional dependencies
 warnings.filterwarnings("ignore", message="Please run pip install hrequests")
 
 class LesEchosScraper:
@@ -27,29 +26,17 @@ class LesEchosScraper:
         self.headers = {
             'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/135.0.0.0 Safari/537.36'
         }
-        # Get yesterday's date
         self.yesterday = (datetime.now() - timedelta(days=1)).date()
-        
-        # Create cache directory if it doesn't exist
+
         if not os.path.exists(cache_dir):
             os.makedirs(cache_dir)
             
-        # Add all category URLs
         self.category_urls = [
             'https://www.lesechos.fr',
-            #'https://www.lesechos.fr/politique-societe',
-            # 'https://www.lesechos.fr/industrie-services',
-            #'https://www.lesechos.fr/bourse',
-             'https://www.lesechos.fr/monde',
-            #'https://www.lesechos.fr/tech-medias',
-            # 'https://www.lesechos.fr/start-up',
-            # 'https://www.lesechos.fr/pme-regions',
-            # 'https://www.lesechos.fr/patrimoine',
-            # 'https://www.lesechos.fr/travailler-mieux',
+            'https://www.lesechos.fr/monde',
         ]
     
     def log_message(self, msg, level="INFO"):
-        """Helper method to handle logging with callback"""
         timestamp = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
         formatted_msg = f"{timestamp} - news_scraper - {level} - {msg}"
         
@@ -64,18 +51,14 @@ class LesEchosScraper:
             self.log_callback(formatted_msg)
 
     def make_request(self, url, method='get', data=None):
-        """Helper method to make HTTP requests with retries"""
         for attempt in range(self.max_retries):
             try:
                 if method.lower() == 'get':
                     response = hrequests.get(url, headers=self.headers)
                 else:
                     response = hrequests.post(url, headers=self.headers, data=data)
-                
-                # Check status code manually since hrequests doesn't have raise_for_status
                 if response.status_code >= 400:
                     raise RequestException(f"HTTP {response.status_code}: {response.text}")
-                    
                 return response
                 
             except ConnectionError as e:
@@ -119,7 +102,6 @@ class LesEchosScraper:
         Returns:
             list: List of article dictionaries with title and link
         """
-        # Check cache first if enabled
         cache_file = os.path.join(self.cache_dir, f"{url.replace('/', '_')}.json")
         if use_cache and os.path.exists(cache_file):
             try:
@@ -136,9 +118,7 @@ class LesEchosScraper:
         try:
             response = self.make_request(url)
             items = []
-            
             soup = BeautifulSoup(response.content, 'html.parser')
-            
             articles = soup.find_all('article')
             if not articles:
                 self.log_message(f"No articles found on {url}. Page structure may have changed.", "WARNING")
@@ -147,16 +127,14 @@ class LesEchosScraper:
             for article in articles:
                 try:
                     title_tag = article.find('h3')
-                    if title_tag and not title_tag.find('span'):  # Skip if <h3> contains a <span> (premium)
+                    if title_tag and not title_tag.find('span'):
                         link = article.find('a')
                         if link and 'href' in link.attrs:
                             href = link['href']
-                            # Ensure the link is absolute
                             if href.startswith('/'):
                                 full_link = f"https://www.lesechos.fr{href}"
                             else:
                                 full_link = href
-                                
                             item = {
                                 "title": title_tag.get_text().replace('\xa0', ' ').strip(),
                                 "link": full_link,
@@ -169,15 +147,12 @@ class LesEchosScraper:
             
             if self.verbose:
                 self.log_message(f"Found {len(items)} non-premium articles on {url}")
-
-            # Cache results if enabled
             if use_cache and items:
                 try:
                     with open(cache_file, 'w', encoding='utf-8') as f:
                         json.dump(items, f, indent=4, ensure_ascii=False)
                 except Exception as e:
                     self.log_message(f"Failed to cache results for {url}: {e}", "WARNING")
-
             return items
             
         except Exception as e:
@@ -192,15 +167,12 @@ class LesEchosScraper:
             list: Combined list of article dictionaries from all pages
         """
         all_articles = []
-        
-        # Scrape articles from all category URLs
         for category_url in self.category_urls:
             if self.verbose:
                 self.log_message(f"Scraping category: {category_url}")
             category_articles = self.get_articles_urls_from_page(category_url)
             all_articles.extend(category_articles)
             
-        # Remove duplicates based on article links
         unique_articles = []
         seen_links = set()
         
@@ -222,9 +194,7 @@ class LesEchosScraper:
         """
         articles = self.get_articles_urls()
         yesterday_articles = []
-
-        # Define the start and end of yesterday as offset-aware datetimes
-        now = datetime.now(timezone.utc)  # Current time in UTC
+        now = datetime.now(timezone.utc)
         yesterday_start = (now - timedelta(days=1)).replace(hour=0, minute=0, second=0, microsecond=0)
         yesterday_end = (now - timedelta(days=1)).replace(hour=23, minute=59, second=59, microsecond=999999)
         
@@ -238,18 +208,14 @@ class LesEchosScraper:
             response = hrequests.get(article['link'])
             if response.status_code == 200:
                 soup = BeautifulSoup(response.content, 'html.parser')
-
-                # Extract publication time from meta tags
                 published_time = soup.find('meta', property='article:published_time')
                 modified_time = soup.find('meta', property='article:modified_time')
-
                 if published_time:
                     article["published_date"] = published_time["content"]
                 if modified_time:
                     article["updated_date"] = modified_time["content"]
 
                 try:
-                    # Parse the published_date as an offset-aware datetime
                     pub_date = datetime.fromisoformat(published_time["content"].replace("Z", "+00:00"))
                     if yesterday_start <= pub_date <= yesterday_end:
                         yesterday_articles.append(article)
@@ -278,26 +244,19 @@ class LesEchosScraper:
             return []
             
         with sync_playwright() as p:
-            
             browser = p.chromium.launch(headless=False)
             page = browser.new_page()
-
-            # Modify the login URL: extract the path from the first article URL and encode it
             original_link = articles[0]['link']
             path = urlparse(original_link).path
             login_url = f"https://www.lesechos.fr/connexion?redirect={quote(path)}"
-
             if self.verbose:
                 self.log_message("Navigating to login page...")
-            
             page.goto(login_url)
-            # Add wait for login form to be ready
             page.wait_for_selector('input[name="email"]', state='visible')
             page.fill('input[name="email"]', email)
             page.fill('input[name="password"]', password)
             page.click('button[type="submit"]')
             
-            # Wait for login to complete and article content to be visible
             try:
                 page.wait_for_selector('.post-paywall', timeout=10000)
                 if self.verbose:
@@ -313,33 +272,23 @@ class LesEchosScraper:
                     self.log_message(f"Scraping content for article {i+1}/{total}: {article.get('title', 'Untitled')[:30]}...")
                 decoded_url = unquote(article['link'])
                 page.goto(decoded_url)
-
                 try:
-                    # Increased timeout and added wait for network idle
                     page.wait_for_load_state('networkidle')
                     page.wait_for_selector('.post-paywall', timeout=10000)
                     html = page.inner_html('.post-paywall')
                     soup = BeautifulSoup(html, 'html.parser')
-
-                    # Remove unwanted tags
                     for tag in soup(["script", "style"]):
                         tag.decompose()
-
-                    # Remove unwanted divs
                     for div in soup.find_all('div', class_='sc-nlqesd-4'):
                         div.decompose()
-
-                    # Extract article content
                     article_text = '\n\n'.join(
                         tag.get_text(separator=" ", strip=True) for tag in soup.find_all(['p', 'h3'])
                     )
-
                     article["content"] = article_text
                     if self.verbose:
                         self.log_message(f"Article '{article.get('title', 'Untitled')[:30]}...' content scraped")
                 except Exception as e:
                     self.log_message(f"Failed to scrape {decoded_url}: {e}", "ERROR")
-                    # Add a small delay before next article
                     page.wait_for_timeout(1000)
 
             page.close()
@@ -365,30 +314,20 @@ class LesEchosScraper:
             list: Sample of articles for testing
         """
         self.log_message(f"Running in test mode with {num_articles} articles")
-        
-        # Only use first category for testing
         test_url = self.category_urls[0]
         articles = self.get_articles_urls_from_page(test_url, use_cache=True)
-        
-        # Limit to requested number of articles
         sample_articles = articles[:num_articles]
-        
-        # Add dates for each article
         for article in sample_articles:
             try:
                 response = hrequests.get(article['link'], headers=self.headers)
                 if response.status_code == 200:
                     soup = BeautifulSoup(response.content, 'html.parser')
-                    
-                    # Extract publication time from meta tags
                     published_time = soup.find('meta', property='article:published_time')
                     modified_time = soup.find('meta', property='article:modified_time')
-
                     if published_time:
                         article["published_date"] = published_time["content"]
                     if modified_time:
                         article["updated_date"] = modified_time["content"]
-                        
                     if self.verbose:
                         self.log_message(f"Added dates for article: {article['title'][:30]}...")
                 else:
@@ -398,7 +337,6 @@ class LesEchosScraper:
         
         if self.verbose:
             self.log_message(f"Processed {len(sample_articles)} articles with dates")
-        
         return sample_articles
 
     def test_content_scraping(self, email, password, num_articles=1):
@@ -413,7 +351,6 @@ class LesEchosScraper:
         Returns:
             list: Articles with scraped content
         """
-        # Get sample articles with dates
         test_articles = self.test_mode(num_articles)
         if not test_articles:
             self.log_message("No articles found for testing")
@@ -423,7 +360,9 @@ class LesEchosScraper:
         return self.scrape_article_content(test_articles, email, password)
 
     def clear_cache(self):
-        """Clear all cached data"""
+        """
+        Clear all cached data
+        """
         if os.path.exists(self.cache_dir):
             try:
                 import shutil
