@@ -1,1 +1,0 @@
-# news-scraper-ai

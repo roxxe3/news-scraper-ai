@@ -6,7 +6,7 @@ An intelligent news scraping and filtering system that collects articles from Le
 
 - Automated scraping of Les Echos news articles from the previous day
 - AI-powered article filtering using OpenAI's GPT-4
-- Clean database storage using SQLite/SQLAlchemy
+- Clean database storage using PostgreSQL/SQLAlchemy
 - User-friendly Streamlit interface for:
   - Article fetching and filtering
   - Content review and selection
