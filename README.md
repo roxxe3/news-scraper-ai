@@ -39,6 +39,21 @@ Create a `.env` file in the project root with:
 OPENAI_API_KEY=your_openai_api_key_here
 ```
 
+5. (Optional) Configure categories to scrape:
+   You can modify which Les Echos categories are scraped by editing the `category_urls` list in `scraper.py`. 
+   By default, only the homepage and world news sections are enabled, but you can uncomment additional categories 
+   as needed:
+   ```python
+   self.category_urls = [
+       'https://www.lesechos.fr',
+       'https://www.lesechos.fr/monde',
+       #'https://www.lesechos.fr/politique-societe',
+       # 'https://www.lesechos.fr/industrie-services',
+       #'https://www.lesechos.fr/bourse',
+       # Uncomment more categories as needed
+   ]
+   ```
+
 ## Usage
 
 ### Using the Streamlit Interface

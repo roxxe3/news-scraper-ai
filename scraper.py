@@ -31,9 +31,18 @@ class LesEchosScraper:
         if not os.path.exists(cache_dir):
             os.makedirs(cache_dir)
             
+        # uncomment to scrap all categories
         self.category_urls = [
             'https://www.lesechos.fr',
             'https://www.lesechos.fr/monde',
+            #'https://www.lesechos.fr/politique-societe',
+            # 'https://www.lesechos.fr/industrie-services',
+            #'https://www.lesechos.fr/bourse',
+            #'https://www.lesechos.fr/tech-medias',
+            # 'https://www.lesechos.fr/start-up',
+            # 'https://www.lesechos.fr/pme-regions',
+            # 'https://www.lesechos.fr/patrimoine',
+            # 'https://www.lesechos.fr/travailler-mieux','
         ]
     
     def log_message(self, msg, level="INFO"):
