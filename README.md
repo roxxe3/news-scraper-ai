@@ -52,11 +52,6 @@ Windows:
 set OPENAI_API_KEY=your_openai_api_key_here
 ```
 
-Alternatively, you can add it to your `.env` file, though this is less secure:
-```
-OPENAI_API_KEY=your_openai_api_key_here
-```
-
    **Important**: You must have a Les Echos account to scrape articles. Many articles are behind a paywall, and authentication is required to access their content. Register at [Les Echos](https://www.lesechos.fr/signup) if you don't have an account.
 
 5. (Optional) Configure categories to scrape:
