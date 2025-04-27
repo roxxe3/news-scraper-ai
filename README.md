@@ -36,8 +36,28 @@ pip install -r requirements.txt
 4. Set up environment variables:
 Create a `.env` file in the project root with:
 ```
+LESECHOS_EMAIL=your_lesechos_account_email
+LESECHOS_PASSWORD=your_lesechos_account_password
+```
+
+For the OpenAI API key, it's recommended to use the export method:
+
+Linux/macOS:
+```bash
+export OPENAI_API_KEY=your_openai_api_key_here
+```
+
+Windows:
+```bash
+set OPENAI_API_KEY=your_openai_api_key_here
+```
+
+Alternatively, you can add it to your `.env` file, though this is less secure:
+```
 OPENAI_API_KEY=your_openai_api_key_here
 ```
+
+   **Important**: You must have a Les Echos account to scrape articles. Many articles are behind a paywall, and authentication is required to access their content. Register at [Les Echos](https://www.lesechos.fr/signup) if you don't have an account.
 
 5. (Optional) Configure categories to scrape:
    You can modify which Les Echos categories are scraped by editing the `category_urls` list in `scraper.py`. 
