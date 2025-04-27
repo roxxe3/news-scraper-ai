@@ -207,7 +207,7 @@ elif st.session_state.step == "filter":
                             
                             # Filter the articles using AI
                             filtered_articles = filter_articles(
-                                articles_with_content,  # Use articles with content
+                                articles_with_content,
                                 topic=st.session_state.topic,
                                 streamlit_mode=True
                             )

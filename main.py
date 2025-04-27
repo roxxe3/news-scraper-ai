@@ -41,7 +41,7 @@ def main():
     
     logger.info(f"Found {len(articles)} articles")
     
-    # Scrape article content if not free-only mode
+    
     if not args.free_only:
         logger.info("Starting article content scraping (requires login)")
         

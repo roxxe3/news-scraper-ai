@@ -77,7 +77,6 @@ def run_cli_pipeline(topic=None, output_dir="output", free_only=False, sample=Fa
             
         log_message(f"Found {len(articles)} articles from yesterday")
         
-        # Apply sample option if requested
         if sample and articles:
             articles = [articles[0]]
             log_message("Sample mode: Using only the first article for testing")
@@ -93,7 +92,6 @@ def run_cli_pipeline(topic=None, output_dir="output", free_only=False, sample=Fa
             password
         )
         
-        # If free_only is set, filter out premium articles
         if free_only:
             articles_with_content = [article for article in articles_with_content if not article.get('is_premium', False)]
             log_message(f"Filtered to {len(articles_with_content)} free articles")
@@ -102,7 +100,6 @@ def run_cli_pipeline(topic=None, output_dir="output", free_only=False, sample=Fa
             log_message("Failed to scrape article content")
             return False
         
-        # Filter out articles without content
         valid_articles = [article for article in articles_with_content if article.get('content')]
         
         if not valid_articles:

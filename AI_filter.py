@@ -155,7 +155,6 @@ def filter_articles(articles, topic="Artificial Intelligence", streamlit_mode=Fa
             
             if len(matches) != len(batch):
                 logger.warning(f"Mismatch in API response length. Expected {len(batch)}, got {len(matches)}")
-                # Skip this batch if response format is invalid
                 continue
             
             for idx, (article, decision) in enumerate(zip(batch, matches)):
@@ -173,7 +172,7 @@ def filter_articles(articles, topic="Artificial Intelligence", streamlit_mode=Fa
             if streamlit_mode:
                 log_to_streamlit(error_message)
             logger.error(error_message)
-            # Continue with next batch instead of failing completely
+
             continue
 
     # Ensure progress bar reaches 100% at the end
@@ -193,7 +192,7 @@ def filter_articles(articles, topic="Artificial Intelligence", streamlit_mode=Fa
         save_json(filtered_articles, output_file)
     except Exception as e:
         logger.error(f"Failed to save filtered articles: {e}")
-        # Don't raise here as we still want to return the filtered articles
+        
         
     return filtered_articles
 

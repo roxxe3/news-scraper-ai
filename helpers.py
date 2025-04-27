@@ -17,7 +17,7 @@ def configure_logging(level=logging.INFO, to_console=True):
     """
     logger = logging.getLogger('news_scraper')
     logger.setLevel(level)
-    logger.handlers = []  # Clear existing handlers
+    logger.handlers = [] 
     
     formatter = logging.Formatter(
         '%(asctime)s - %(name)s - %(levelname)s - %(message)s',
@@ -29,7 +29,7 @@ def configure_logging(level=logging.INFO, to_console=True):
     file_handler.setFormatter(formatter)
     logger.addHandler(file_handler)
     
-    # Optionally log to console
+
     if to_console:
         console_handler = logging.StreamHandler(sys.stdout)
         console_handler.setFormatter(formatter)
