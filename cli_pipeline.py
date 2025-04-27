@@ -43,12 +43,15 @@ def save_to_database(articles, topic=None):
     finally:
         session.close()
 
-def run_cli_pipeline(topic=None, verbose=False, log_callback=None):
+def run_cli_pipeline(topic=None, output_dir="output", free_only=False, sample=False, verbose=False, log_callback=None):
     """
     Run the complete pipeline: scrape articles, filter by topic, and save to database
     
     Args:
         topic (str): Topic to filter articles by
+        output_dir (str): Directory to save output files
+        free_only (bool): Whether to only scrape free articles
+        sample (bool): Whether to only process the first article (for testing)
         verbose (bool): Whether to show verbose logging
         log_callback (callable): Optional callback function for logging in Streamlit
     """
@@ -74,12 +77,26 @@ def run_cli_pipeline(topic=None, verbose=False, log_callback=None):
             
         log_message(f"Found {len(articles)} articles from yesterday")
         
+        # Apply sample option if requested
+        if sample and articles:
+            articles = [articles[0]]
+            log_message("Sample mode: Using only the first article for testing")
+        
         # Get login credentials and scrape content
         log_message("Getting login credentials...")
         email, password = get_credentials()
         
         log_message("Scraping article content...")
-        articles_with_content = scraper.scrape_article_content(articles, email, password)
+        articles_with_content = scraper.scrape_article_content(
+            articles, 
+            email, 
+            password
+        )
+        
+        # If free_only is set, filter out premium articles
+        if free_only:
+            articles_with_content = [article for article in articles_with_content if not article.get('is_premium', False)]
+            log_message(f"Filtered to {len(articles_with_content)} free articles")
         
         if not articles_with_content:
             log_message("Failed to scrape article content")
@@ -95,7 +112,6 @@ def run_cli_pipeline(topic=None, verbose=False, log_callback=None):
         log_message(f"Successfully scraped content for {len(valid_articles)} articles")
             
         # Save only articles with content
-        output_dir = "output"
         if not os.path.exists(output_dir):
             os.makedirs(output_dir)
             
@@ -103,6 +119,25 @@ def run_cli_pipeline(topic=None, verbose=False, log_callback=None):
         with open(output_file, "w", encoding="utf-8") as f:
             json.dump(valid_articles, f, indent=4, ensure_ascii=False)
         log_message(f"Saved {len(valid_articles)} articles with content to {output_file}")
+        
+        # Apply AI filtering if topic is provided
+        if topic:
+            log_message(f"Filtering articles by topic: {topic}...")
+            filtered_articles = filter_articles(valid_articles, topic)
+            
+            if filtered_articles:
+                # Save filtered articles
+                filtered_filename = f"filtered_articles_{topic.lower().replace(' ', '_')}.json"
+                filtered_path = os.path.join(output_dir, filtered_filename)
+                with open(filtered_path, "w", encoding="utf-8") as f:
+                    json.dump(filtered_articles, f, indent=4, ensure_ascii=False)
+                log_message(f"Saved {len(filtered_articles)} filtered articles to {filtered_path}")
+                
+                # Save to database
+                log_message("Saving filtered articles to database...")
+                save_to_database(filtered_articles, topic)
+            else:
+                log_message(f"No articles matched the topic: {topic}")
         
         log_message("Pipeline completed successfully!")
         return True
@@ -135,4 +170,4 @@ def main():
     sys.exit(0 if success else 1)
 
 if __name__ == "__main__":
-    main() 
+    main()
