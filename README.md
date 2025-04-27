@@ -74,6 +74,42 @@ OPENAI_API_KEY=your_openai_api_key_here
    ]
    ```
 
+6. **Required Database Setup (PostgreSQL)**:
+   This application requires PostgreSQL as its database. Follow these steps to set it up:
+
+   1. **Install PostgreSQL** on your system:
+      - Windows: Download and run the installer from [PostgreSQL Website](https://www.postgresql.org/download/windows/)
+      - macOS: `brew install postgresql`
+      - Linux: `sudo apt install postgresql postgresql-contrib`
+
+   2. **Create a database**:
+      ```bash
+      # Log in as the postgres user
+      sudo -u postgres psql
+
+      # Create a new user (if needed)
+      CREATE USER youruser WITH PASSWORD 'yourpassword';
+
+      # Create a database for the application
+      CREATE DATABASE news_scraper_db;
+
+      # Grant privileges
+      GRANT ALL PRIVILEGES ON DATABASE news_scraper_db TO youruser;
+
+      # Exit PostgreSQL
+      \q
+      ```
+
+   3. **Configure the connection** in your `.env` file:
+      ```
+      DATABASE_URL=postgresql://youruser:yourpassword@localhost:5432/news_scraper_db
+      ```
+
+   4. **Install psycopg2** (PostgreSQL adapter for Python):
+      ```bash
+      pip install psycopg2-binary
+      ```
+
 ## Usage
 
 ### Using the Streamlit Interface
